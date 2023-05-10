@@ -1,0 +1,32 @@
+#!/bin/bash -l
+
+#SBATCH --export=NONE               # do not export current env to the job
+#SBATCH --job-name=tassel.gbs       # job name
+#SBATCH --time=00-5:00:00             # max job run time dd-hh:mm:ss
+#SBATCH --ntasks-per-node=1         # tasks (commands) per compute node
+#SBATCH --cpus-per-task=48          # CPUs (threads) per command
+#SBATCH --mem=360G                  # total memory per node
+#SBATCH --output=stdout.%x.%j       # save stdout to file
+#SBATCH --error=stderr.%x.%j        # save stderr to file
+#SBATCH --mail-user=user@email.com
+#SBATCH --mail-type=all
+
+
+module load TASSEL/5.2.82-Java-1.8
+module load bwa-mem2/2.2.1-Linux64 
+
+
+fastqDir=/scratch/user/Dir  ####leave with no / on the end of the dir.
+DB=/scratch/user/Dir/Database.db
+Key=/scratch/user/Dir/key.txt
+OUT=/scratch/user/Dir/raw.vcf.gz
+
+BWAindex=/scratch/Dir/BWArefIndex
+Reference=/scratch/referenceGenome.fasta
+
+run_pipeline.pl -Xms100g -Xmx360g  -fork1 -GBSSeqToTagDBPlugin -e PstI-MspI -i $fastqDir -db $DB -k $Key -kmerLength 64 -minKmerL 20 -endPlugin -runfork1
+run_pipeline.pl -fork1 -TagExportToFastqPlugin -db $DB -o $fastqDir/tagsForAlign.fa.gz -c 1 -endPlugin -runfork1
+bwa-mem2 mem -t 47 $BWAindex $fastqDir/tagsForAlign.fa.gz -o $fastqDir/TasselAligned.sam
+run_pipeline.pl -Xms100g -Xmx360g -fork1 -SAMToGBSdbPlugin -i $fastqDir/TasselAligned.sam -db $DB -minMAPQ 20 -endPlugin -runfork1 
+run_pipeline.pl -Xms100g -Xmx360g -fork1 -DiscoverySNPCallerPluginV2 -ref $Reference -db $DB -mnLCov 0.01 -mnMAF 0.01 -deleteOldData true -endPlugin -runfork1
+run_pipeline.pl -Xms100g -Xmx360g -fork1 -ProductionSNPCallerPluginV2 -db $DB -e PstI-MspI -i $fastqDir -k $Key -kmerLength 64 -do true -o $OUT -endPlugin -
